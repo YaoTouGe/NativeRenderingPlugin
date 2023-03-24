@@ -459,6 +459,9 @@ private:
     void SafeDestroy(unsigned long long frameNumber, const VulkanBuffer& buffer);
     void GarbageCollect(bool force = false);
 
+    void CreateCustomizeRenderResources();
+    void DestroyCustomizedResources();
+
 private:
     IUnityGraphicsVulkan* m_UnityVulkan;
     UnityVulkanInstance m_Instance;
@@ -468,6 +471,13 @@ private:
     VkPipelineLayout m_TrianglePipelineLayout;
     VkPipeline m_TrianglePipeline;
     VkRenderPass m_TrianglePipelineRenderPass;
+
+    VkCommandPool m_myCmdPool;
+    VkCommandBuffer m_myCmdB;
+    VkFramebuffer m_myFrameBuffer;
+    VkRenderPass m_myRenderPass;
+    std::vector<VkImage> m_images;
+    std::vector<VkImageView> m_imageViews;
 };
 
 
@@ -521,6 +531,8 @@ void RenderAPI_Vulkan::ProcessDeviceEvent(UnityGfxDeviceEventType type, IUnityIn
                 vkDestroyPipelineLayout(m_Instance.device, m_TrianglePipelineLayout, NULL);
                 m_TrianglePipelineLayout = VK_NULL_HANDLE;
             }
+
+            // DestroyCustomizedResources();
         }
 
         m_UnityVulkan = NULL;
@@ -608,6 +620,32 @@ void RenderAPI_Vulkan::ImmediateDestroyVulkanBuffer(const VulkanBuffer& buffer)
         vkFreeMemory(m_Instance.device, buffer.deviceMemory, NULL);
 }
 
+void RenderAPI_Vulkan::CreateCustomizeRenderResources()
+{
+    // CmdPool CmdBuffer
+    VkCommandPoolCreateInfo cmdPoolInfo{};
+    cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+    cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cmdPoolInfo.queueFamilyIndex = m_UnityVulkan->queueFamilyIndex;
+    vkCreateCommandPool(m_UnityVulkan->device, &cmdPoolInfo, nullptr, &m_myCmdPool);
+
+    VkCommandBufferAllocateInfo cmdAllocInfo{};
+    cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    cmdAllocInfo.commandPool = m_myCmdPool;
+    cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmdAllocInfo.commandBufferCount = 1;
+    vkAllocateCommandBuffers(m_UnityVulkan->device, &cmdAllocInfo, &m_myCmdB);
+    // Images imageviews
+
+    // Renderpass
+
+    // Frame buffer
+}
+
+void RenderAPI_Vulkan::DestroyCustomizedResources()
+{
+
+}
 
 void RenderAPI_Vulkan::SafeDestroy(unsigned long long frameNumber, const VulkanBuffer& buffer)
 {
@@ -642,18 +680,20 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
      // not needed, we already configured the event to be inside a render pass
      //   m_UnityVulkan->EnsureInsideRenderPass();
 
-    UnityVulkanRecordingState recordingState;
-    if (!m_UnityVulkan->CommandRecordingState(&recordingState, kUnityVulkanGraphicsQueueAccess_DontCare))
-        return;
+    // UnityVulkanRecordingState recordingState;
+    // if (!m_UnityVulkan->CommandRecordingState(&recordingState, kUnityVulkanGraphicsQueueAccess_DontCare))
+    //     return;
 
     // Unity does not destroy render passes, so this is safe regarding ABA-problem
-    if (recordingState.renderPass != m_TrianglePipelineRenderPass)
+    // if (recordingState.renderPass != m_TrianglePipelineRenderPass)
+
+    // use our own render pass and frame buffer instead of unity's
     {
         if (m_TrianglePipelineLayout == VK_NULL_HANDLE)
             m_TrianglePipelineLayout = CreateTrianglePipelineLayout(m_Instance.device);
-
-        m_TrianglePipeline = CreateTrianglePipeline(m_Instance.device, m_TrianglePipelineLayout, recordingState.renderPass, VK_NULL_HANDLE);
-		m_TrianglePipelineRenderPass = recordingState.renderPass;
+        if (m_TrianglePipeline == VK_NULL_HANDLE)
+            m_TrianglePipeline = CreateTrianglePipeline(m_Instance.device, m_TrianglePipelineLayout, m_myRenderPass, VK_NULL_HANDLE);
+		// m_TrianglePipelineRenderPass = recordingState.renderPass;
     }
 
     if (m_TrianglePipeline != VK_NULL_HANDLE && m_TrianglePipelineLayout != VK_NULL_HANDLE)
@@ -673,12 +713,38 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
             range.size = buffer.deviceMemorySize;
             vkFlushMappedMemoryRanges(m_Instance.device, 1, &range);
         }
+        VkCommandBufferBeginInfo beginInfo{};
+        beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        beginInfo.flags = 0;
+        beginInfo.pInheritanceInfo = nullptr;
 
+        vkBeginCommandBuffer(m_myCmdB, &beginInfo);
+
+        VkRenderPassBeginInfo passBeginInfo{};
+        passBeginInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
+        passBeginInfo.renderPass = m_myRenderPass;
+        passBeginInfo.framebuffer = m_myFrameBuffer;
+        passBeginInfo.renderArea.offset = {0, 0};
+        passBeginInfo.renderArea.extent = ;
+
+        VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
+        passBeginInfo.clearValueCount = 1;
+        passBeginInfo.pClearValues = &clearColor;
+
+        vkCmdBeginRenderPass(m_myCmdB, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         const VkDeviceSize offset = 0;
-        vkCmdBindVertexBuffers(recordingState.commandBuffer, 0, 1, &buffer.buffer, &offset);
-        vkCmdPushConstants(recordingState.commandBuffer, m_TrianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, (const void*)worldMatrix);
-        vkCmdBindPipeline(recordingState.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipeline);
-        vkCmdDraw(recordingState.commandBuffer, triangleCount * 3, 1, 0, 0);
+        // vkCmdBindVertexBuffers(recordingState.commandBuffer, 0, 1, &buffer.buffer, &offset);
+        // vkCmdPushConstants(recordingState.commandBuffer, m_TrianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, (const void*)worldMatrix);
+        // vkCmdBindPipeline(recordingState.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipeline);
+        // vkCmdDraw(recordingState.commandBuffer, triangleCount * 3, 1, 0, 0);
+
+        vkCmdBindVertexBuffers(m_myCmdB, 0, 1, &buffer.buffer, &offset);
+        vkCmdPushConstants(m_myCmdB, m_TrianglePipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 0, 64, (const void *)worldMatrix);
+        vkCmdBindPipeline(m_myCmdB, VK_PIPELINE_BIND_POINT_GRAPHICS, m_TrianglePipeline);
+        vkCmdDraw(m_myCmdB, triangleCount * 3, 1, 0, 0);
+
+        vkCmdEndRenderPass(m_myCmdB);
+        vkEndCommandBuffer(m_myCmdB);
 
         SafeDestroy(recordingState.currentFrameNumber, buffer);
     }

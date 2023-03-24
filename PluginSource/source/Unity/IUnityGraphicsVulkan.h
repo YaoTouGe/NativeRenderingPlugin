@@ -6,7 +6,7 @@
 #endif
 
 #include UNITY_VULKAN_HEADER
-
+#include <vulkan/vulkan.h>
 struct UnityVulkanInstance
 {
     VkPipelineCache pipelineCache; // Unity's pipeline cache is serialized to disk
