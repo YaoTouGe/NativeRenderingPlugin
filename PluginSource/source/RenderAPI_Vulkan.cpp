@@ -37,7 +37,12 @@
     apply(vkCmdPushConstants); \
     apply(vkCmdBindVertexBuffers); \
     apply(vkDestroyPipeline); \
-    apply(vkDestroyPipelineLayout);
+    apply(vkDestroyPipelineLayout);\
+    apply(vkCreateCommandPool);\
+    apply(vkAllocateCommandBuffers);\
+    apply(vkBeginCommandBuffer);\
+    apply(vkCmdEndRenderPass);\
+    apply(vkEndCommandBuffer);
     
 #define VULKAN_DEFINE_API_FUNCPTR(func) static PFN_##func func
 VULKAN_DEFINE_API_FUNCPTR(vkGetInstanceProcAddr);
@@ -626,20 +631,22 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     VkCommandPoolCreateInfo cmdPoolInfo{};
     cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-    cmdPoolInfo.queueFamilyIndex = m_UnityVulkan->queueFamilyIndex;
-    vkCreateCommandPool(m_UnityVulkan->device, &cmdPoolInfo, nullptr, &m_myCmdPool);
+    cmdPoolInfo.queueFamilyIndex = m_Instance.queueFamilyIndex;
+    vkCreateCommandPool(m_Instance.device, &cmdPoolInfo, nullptr, &m_myCmdPool);
 
     VkCommandBufferAllocateInfo cmdAllocInfo{};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdAllocInfo.commandPool = m_myCmdPool;
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    vkAllocateCommandBuffers(m_UnityVulkan->device, &cmdAllocInfo, &m_myCmdB);
+    vkAllocateCommandBuffers(m_Instance.device, &cmdAllocInfo, &m_myCmdB);
+
     // Images imageviews
 
     // Renderpass
 
     // Frame buffer
+
 }
 
 void RenderAPI_Vulkan::DestroyCustomizedResources()
@@ -680,9 +687,9 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
      // not needed, we already configured the event to be inside a render pass
      //   m_UnityVulkan->EnsureInsideRenderPass();
 
-    // UnityVulkanRecordingState recordingState;
-    // if (!m_UnityVulkan->CommandRecordingState(&recordingState, kUnityVulkanGraphicsQueueAccess_DontCare))
-    //     return;
+    UnityVulkanRecordingState recordingState;
+    if (!m_UnityVulkan->CommandRecordingState(&recordingState, kUnityVulkanGraphicsQueueAccess_DontCare))
+         return;
 
     // Unity does not destroy render passes, so this is safe regarding ABA-problem
     // if (recordingState.renderPass != m_TrianglePipelineRenderPass)
@@ -725,7 +732,7 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
         passBeginInfo.renderPass = m_myRenderPass;
         passBeginInfo.framebuffer = m_myFrameBuffer;
         passBeginInfo.renderArea.offset = {0, 0};
-        passBeginInfo.renderArea.extent = ;
+        //passBeginInfo.renderArea.extent = ;
 
         VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
         passBeginInfo.clearValueCount = 1;

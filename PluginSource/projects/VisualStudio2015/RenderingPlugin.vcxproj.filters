@@ -27,6 +27,9 @@
     <ClInclude Include="..\..\source\gl3w\glcorearb.h">
       <Filter>gl3w</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\source\Unity\IUnityGraphicsVulkan.h">
+      <Filter>Unity</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\source\RenderAPI.cpp" />
