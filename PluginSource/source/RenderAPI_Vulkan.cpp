@@ -453,6 +453,14 @@ public:
     virtual void EndModifyTexture(void* textureHandle, int textureWidth, int textureHeight, int rowPitch, void* dataPtr);
     virtual void* BeginModifyVertexBuffer(void* bufferHandle, size_t* outBufferSize);
     virtual void EndModifyVertexBuffer(void* bufferHandle);
+    virtual void SetRenderTargetColorTexture(void *textureHandle)
+    {
+        m_UnityVulkan->EnsureOutsideRenderPass();
+
+        if (!m_UnityVulkan->AccessTexture(textureHandle, UnityVulkanWholeImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, kUnityVulkanResourceAccess_PipelineBarrier, &m_renderTargetColorAttachment))
+            return;
+    }
 
 private:
     typedef std::vector<VulkanBuffer> VulkanBuffers;
@@ -483,6 +491,7 @@ private:
     VkRenderPass m_myRenderPass;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;
+    UnityVulkanImage m_renderTargetColorAttachment;
 };
 
 

@@ -3,7 +3,8 @@
         "*.raytrace": "hlsl",
         "*.tinysl": "glsl",
         "vector": "cpp",
-        "map": "cpp"
+        "map": "cpp",
+        "ios": "cpp"
     },
     "C_Cpp.default.includePath": [
         "/Users/wangyudong/Library/Android/sdk/ndk/unity-r19/sysroot/usr/include"
