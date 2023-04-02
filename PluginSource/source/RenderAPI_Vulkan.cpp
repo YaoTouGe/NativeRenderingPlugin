@@ -7,6 +7,7 @@
 #include <map>
 #include <vector>
 #include <math.h>
+#include <array>
 
 // This plugin does not link to the Vulkan loader, easier to support multiple APIs and systems that don't have Vulkan support
 #define VK_NO_PROTOTYPES
@@ -42,7 +43,16 @@
     apply(vkAllocateCommandBuffers);\
     apply(vkBeginCommandBuffer);\
     apply(vkCmdEndRenderPass);\
-    apply(vkEndCommandBuffer);
+    apply(vkEndCommandBuffer);\
+    apply(vkCreateImage);\
+    apply(vkAllocateMemory);\
+    apply(vkBindImageMemory);\
+    apply(vkGetImageMemoryRequirements);\
+    apply(vkGetPhysicalDeviceMemoryProperties);\
+    apply(vkCreateImageView);\
+    apply(vkCreateRenderPass);\
+    apply(vkCreateFramebuffer);
+
     
 #define VULKAN_DEFINE_API_FUNCPTR(func) static PFN_##func func
 VULKAN_DEFINE_API_FUNCPTR(vkGetInstanceProcAddr);
@@ -491,6 +501,7 @@ private:
     VkRenderPass m_myRenderPass;
     std::vector<VkImage> m_images;
     std::vector<VkImageView> m_imageViews;
+    std::vector<VkDeviceMemory> m_imageMemroies;
     UnityVulkanImage m_renderTargetColorAttachment;
 };
 
@@ -529,6 +540,7 @@ void RenderAPI_Vulkan::ProcessDeviceEvent(UnityGfxDeviceEventType type, IUnityIn
 
         // alternative way to intercept API
         m_UnityVulkan->InterceptVulkanAPI("vkCmdBeginRenderPass", (PFN_vkVoidFunction)Hook_vkCmdBeginRenderPass);
+        CreateCustomizeRenderResources();
         break;
     case kUnityGfxDeviceEventShutdown:
 
@@ -634,6 +646,21 @@ void RenderAPI_Vulkan::ImmediateDestroyVulkanBuffer(const VulkanBuffer& buffer)
         vkFreeMemory(m_Instance.device, buffer.deviceMemory, NULL);
 }
 
+extern void* g_rtTextureHandle;
+extern int g_rtWidth;
+extern int g_rtHeight;
+
+static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(physicalDevice, &memProperties);
+
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if (typeFilter & (1 << i) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+}
+
 void RenderAPI_Vulkan::CreateCustomizeRenderResources()
 {
     // CmdPool CmdBuffer
@@ -651,11 +678,97 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     vkAllocateCommandBuffers(m_Instance.device, &cmdAllocInfo, &m_myCmdB);
 
     // Images imageviews
+    // Depth buffer
+    VkImage depthImage;
+    VkDeviceMemory depthImageMemory;
+    VkImageView depthImageView;
 
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent = { (unsigned int) g_rtWidth, (unsigned int)g_rtHeight, 1 };
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+    vkCreateImage(m_Instance.device, &imageInfo, nullptr, &depthImage);
+
+    VkMemoryRequirements memRequirements;
+    vkGetImageMemoryRequirements(m_Instance.device, depthImage, &memRequirements);
+    VkMemoryAllocateInfo allocInfos{};
+    allocInfos.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfos.allocationSize = memRequirements.size;
+    allocInfos.memoryTypeIndex = findMemoryType(m_Instance.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    vkAllocateMemory(m_Instance.device, &allocInfos, nullptr, &depthImageMemory);
+    vkBindImageMemory(m_Instance.device, depthImage, depthImageMemory, 0);
+
+    VkImageViewCreateInfo imageViewInfo{};
+    imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    imageViewInfo.image = depthImage;
+    imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    imageViewInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    imageViewInfo.subresourceRange.baseMipLevel = 0;
+    imageViewInfo.subresourceRange.levelCount = 1;
+    imageViewInfo.subresourceRange.baseArrayLayer = 0;
+    imageViewInfo.subresourceRange.layerCount = 1;
+    vkCreateImageView(m_Instance.device, &imageViewInfo, nullptr, &depthImageView);
+    // ignore layout transition here
+    m_images.push_back(depthImage);
+    m_imageMemroies.push_back(depthImageMemory);
+    m_imageViews.push_back(depthImageView);
     // Renderpass
+    VkAttachmentDescription colorAttachment{};
+    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
+    VkAttachmentDescription depthAttachment{};
+    depthAttachment.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
+
+    VkAttachmentReference colorAttRef;
+    colorAttRef.attachment = 0;
+    colorAttRef.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    VkAttachmentReference depthRef;
+    depthRef.attachment = 1;
+    depthRef.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+    VkSubpassDescription subpass{};
+    subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &colorAttRef;
+    subpass.pDepthStencilAttachment = &depthRef;
+
+    VkRenderPassCreateInfo renderPassInfo{};
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderPassInfo.attachmentCount = (uint32_t)attachments.size();
+    renderPassInfo.pAttachments = attachments.data();
+    renderPassInfo.subpassCount = 1;
+    renderPassInfo.pSubpasses = &subpass;
+
+    vkCreateRenderPass(m_Instance.device, &renderPassInfo, nullptr, &m_myRenderPass);
     // Frame buffer
-
+    VkFramebufferCreateInfo frameBufferInfo{};
+    frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    frameBufferInfo.renderPass = m_myRenderPass;
+    frameBufferInfo.attachmentCount = m_imageViews.size();
+    frameBufferInfo.pAttachments = m_imageViews.data();
+    frameBufferInfo.width = g_rtWidth;
+    frameBufferInfo.height = g_rtHeight;
+    frameBufferInfo.layers = 1;
+    vkCreateFramebuffer(m_Instance.device, &frameBufferInfo, nullptr, &m_myFrameBuffer);
 }
 
 void RenderAPI_Vulkan::DestroyCustomizedResources()

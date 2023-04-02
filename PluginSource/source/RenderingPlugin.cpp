@@ -34,6 +34,16 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API SetTextureFromUnity(v
 	g_TextureHeight = h;
 }
 
+void* g_rtTextureHandle;
+int g_rtWidth = 0;
+int g_rtHeight = 0;
+
+extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API SetRtTextureColorAttachment(void* textureHandle, int w, int h)
+{
+	g_rtTextureHandle = textureHandle;
+	g_rtWidth = w;
+	g_rtHeight = h;
+}
 
 // --------------------------------------------------------------------------
 // SetMeshBuffersFromUnity, an example function we export which is called by one of the scripts.
