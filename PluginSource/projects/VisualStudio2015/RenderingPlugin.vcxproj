@@ -132,7 +132,7 @@
       <PrecompiledHeader />
       <WarningLevel>Level3</WarningLevel>
       <DebugInformationFormat>EditAndContinue</DebugInformationFormat>
-      <AdditionalIncludeDirectories>D:\VulkanSDK\Lib;D:\VulkanSDK\Include;../../</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>E:\VulkanSDK\Include;../../</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <AdditionalDependencies>opengl32.lib;%(AdditionalDependencies)</AdditionalDependencies>

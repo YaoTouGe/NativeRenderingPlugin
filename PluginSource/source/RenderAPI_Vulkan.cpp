@@ -45,13 +45,16 @@
     apply(vkCmdEndRenderPass);\
     apply(vkEndCommandBuffer);\
     apply(vkCreateImage);\
-    apply(vkAllocateMemory);\
     apply(vkBindImageMemory);\
     apply(vkGetImageMemoryRequirements);\
-    apply(vkGetPhysicalDeviceMemoryProperties);\
     apply(vkCreateImageView);\
     apply(vkCreateRenderPass);\
-    apply(vkCreateFramebuffer);
+    apply(vkCreateFramebuffer);\
+    apply(vkQueueSubmit);\
+    apply(vkResetCommandBuffer);\
+    apply(vkWaitForFences);\
+    apply(vkCreateFence);\
+    apply(vkResetFences);
 
     
 #define VULKAN_DEFINE_API_FUNCPTR(func) static PFN_##func func
@@ -467,9 +470,11 @@ public:
     {
         m_UnityVulkan->EnsureOutsideRenderPass();
 
-        if (!m_UnityVulkan->AccessTexture(textureHandle, UnityVulkanWholeImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                                          VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, kUnityVulkanResourceAccess_PipelineBarrier, &m_renderTargetColorAttachment))
-            return;
+        if (m_UnityVulkan->AccessTexture(textureHandle, UnityVulkanWholeImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, kUnityVulkanResourceAccess_PipelineBarrier, &m_renderTargetColorAttachment))
+        {
+            CreateCustomizeRenderResources();
+        }
     }
 
 private:
@@ -497,6 +502,7 @@ private:
 
     VkCommandPool m_myCmdPool;
     VkCommandBuffer m_myCmdB;
+    VkFence m_drawFence;
     VkFramebuffer m_myFrameBuffer;
     VkRenderPass m_myRenderPass;
     std::vector<VkImage> m_images;
@@ -535,7 +541,7 @@ void RenderAPI_Vulkan::ProcessDeviceEvent(UnityGfxDeviceEventType type, IUnityIn
         UnityVulkanPluginEventConfig config_1;
         config_1.graphicsQueueAccess = kUnityVulkanGraphicsQueueAccess_DontCare;
         config_1.renderPassPrecondition = kUnityVulkanRenderPass_EnsureInside;
-        config_1.flags = kUnityVulkanEventConfigFlag_EnsurePreviousFrameSubmission | kUnityVulkanEventConfigFlag_ModifiesCommandBuffersState;
+        config_1.flags = kUnityVulkanEventConfigFlag_EnsurePreviousFrameSubmission | kUnityVulkanEventConfigFlag_ModifiesCommandBuffersState | kUnityVulkanEventConfigFlag_FlushCommandBuffers;
         m_UnityVulkan->ConfigureEvent(1, &config_1);
 
         // alternative way to intercept API
@@ -663,6 +669,10 @@ static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFil
 
 void RenderAPI_Vulkan::CreateCustomizeRenderResources()
 {
+    VkFenceCreateInfo fenceInfo{};
+    fenceInfo.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
+    vkCreateFence(m_Instance.device, &fenceInfo, nullptr, &m_drawFence);
+
     // CmdPool CmdBuffer
     VkCommandPoolCreateInfo cmdPoolInfo{};
     cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -682,6 +692,7 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     VkImage depthImage;
     VkDeviceMemory depthImageMemory;
     VkImageView depthImageView;
+    VkImageView colorImageView;
 
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -705,24 +716,38 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     vkAllocateMemory(m_Instance.device, &allocInfos, nullptr, &depthImageMemory);
     vkBindImageMemory(m_Instance.device, depthImage, depthImageMemory, 0);
 
-    VkImageViewCreateInfo imageViewInfo{};
-    imageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-    imageViewInfo.image = depthImage;
-    imageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-    imageViewInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
-    imageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
-    imageViewInfo.subresourceRange.baseMipLevel = 0;
-    imageViewInfo.subresourceRange.levelCount = 1;
-    imageViewInfo.subresourceRange.baseArrayLayer = 0;
-    imageViewInfo.subresourceRange.layerCount = 1;
-    vkCreateImageView(m_Instance.device, &imageViewInfo, nullptr, &depthImageView);
+    VkImageViewCreateInfo depthImageViewInfo{};
+    depthImageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    depthImageViewInfo.image = depthImage;
+    depthImageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    depthImageViewInfo.format = VK_FORMAT_D24_UNORM_S8_UINT;
+    depthImageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_DEPTH_BIT;
+    depthImageViewInfo.subresourceRange.baseMipLevel = 0;
+    depthImageViewInfo.subresourceRange.levelCount = 1;
+    depthImageViewInfo.subresourceRange.baseArrayLayer = 0;
+    depthImageViewInfo.subresourceRange.layerCount = 1;
+    vkCreateImageView(m_Instance.device, &depthImageViewInfo, nullptr, &depthImageView);
+
+    VkImageViewCreateInfo colorImageViewInfo{};
+    colorImageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    colorImageViewInfo.image = m_renderTargetColorAttachment.image;
+    colorImageViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    colorImageViewInfo.format = m_renderTargetColorAttachment.format;
+    colorImageViewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    colorImageViewInfo.subresourceRange.baseMipLevel = 0;
+    colorImageViewInfo.subresourceRange.levelCount = 1;
+    colorImageViewInfo.subresourceRange.baseArrayLayer = 0;
+    colorImageViewInfo.subresourceRange.layerCount = 1;
+    vkCreateImageView(m_Instance.device, &colorImageViewInfo, nullptr, &colorImageView);
+
     // ignore layout transition here
     m_images.push_back(depthImage);
     m_imageMemroies.push_back(depthImageMemory);
     m_imageViews.push_back(depthImageView);
+    m_imageViews.push_back(colorImageView);
     // Renderpass
     VkAttachmentDescription colorAttachment{};
-    colorAttachment.format = VK_FORMAT_B8G8R8A8_UNORM;
+    colorAttachment.format = m_renderTargetColorAttachment.format;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
     colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -813,6 +838,8 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
     if (!m_UnityVulkan->CommandRecordingState(&recordingState, kUnityVulkanGraphicsQueueAccess_DontCare))
          return;
 
+    vkResetCommandBuffer(m_myCmdB, 0);
+
     // Unity does not destroy render passes, so this is safe regarding ABA-problem
     // if (recordingState.renderPass != m_TrianglePipelineRenderPass)
 
@@ -875,6 +902,16 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
         vkCmdEndRenderPass(m_myCmdB);
         vkEndCommandBuffer(m_myCmdB);
 
+        VkSubmitInfo submitInfo{};
+        submitInfo.commandBufferCount = 1;
+        submitInfo.pCommandBuffers = &m_myCmdB;
+        submitInfo.signalSemaphoreCount = 0;
+        submitInfo.waitSemaphoreCount = 0;
+
+        vkQueueSubmit(m_Instance.graphicsQueue, 1, &submitInfo, m_drawFence);
+
+        vkWaitForFences(m_Instance.device, 1, &m_drawFence, VK_TRUE, UINT64_MAX);
+        vkResetFences(m_Instance.device, 1, &m_drawFence);
         SafeDestroy(recordingState.currentFrameNumber, buffer);
     }
 
