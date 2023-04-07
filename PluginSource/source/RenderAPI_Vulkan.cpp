@@ -8,6 +8,8 @@
 #include <vector>
 #include <math.h>
 #include <array>
+#include <cassert>
+
 
 // This plugin does not link to the Vulkan loader, easier to support multiple APIs and systems that don't have Vulkan support
 #define VK_NO_PROTOTYPES
@@ -54,7 +56,9 @@
     apply(vkResetCommandBuffer);\
     apply(vkWaitForFences);\
     apply(vkCreateFence);\
-    apply(vkResetFences);
+    apply(vkResetFences);\
+    apply(vkCmdSetViewport);\
+    apply(vkCmdSetScissor);
 
     
 #define VULKAN_DEFINE_API_FUNCPTR(func) static PFN_##func func
@@ -765,18 +769,20 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_renderTargetColorAttachment.format;
     colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    colorAttachment.initialLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     colorAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
     VkAttachmentDescription depthAttachment{};
     depthAttachment.format = VK_FORMAT_D24_UNORM_S8_UINT;
     depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
-    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
     depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_STORE;
     depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
     std::array<VkAttachmentDescription, 2> attachments = { colorAttachment, depthAttachment };
 
     VkAttachmentReference colorAttRef;
@@ -792,12 +798,23 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     subpass.pColorAttachments = &colorAttRef;
     subpass.pDepthStencilAttachment = &depthRef;
 
+    VkSubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+
+    dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    dependency.srcAccessMask = 0;
+    dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;;
+    dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+
     VkRenderPassCreateInfo renderPassInfo{};
     renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = (uint32_t)attachments.size();
     renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
+    renderPassInfo.dependencyCount = 0;
+    renderPassInfo.pDependencies = &dependency;
 
     VK_RUN_SUCC(vkCreateRenderPass(m_Instance.device, &renderPassInfo, nullptr, &m_myRenderPass));
     // Frame buffer
@@ -897,12 +914,31 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
         passBeginInfo.renderPass = m_myRenderPass;
         passBeginInfo.framebuffer = m_myFrameBuffer;
         passBeginInfo.renderArea.offset = {0, 0};
+        passBeginInfo.renderArea.extent = { (unsigned int)g_rtWidth, (unsigned int)g_rtHeight };
+
+        std::array<VkClearValue, 2> clearValues{};
+        clearValues[0].color = { {0.0f, 0.0f, 0.0f, 1.0f} };
+        clearValues[1].depthStencil = { 0.0f, 0 };
+
+        passBeginInfo.clearValueCount = static_cast<uint32_t>(clearValues.size());
+        passBeginInfo.pClearValues = clearValues.data();
         //passBeginInfo.renderArea.extent = ;
 
-        VkClearValue clearColor = {{{0.f, 0.f, 0.f, 1.f}}};
-        passBeginInfo.clearValueCount = 1;
-        passBeginInfo.pClearValues = &clearColor;
+        VkViewport viewport;
+        viewport.width = g_rtWidth;
+        viewport.height = g_rtHeight;
+        viewport.x = 0;
+        viewport.y = 0;
+        viewport.minDepth = 0.0f;
+        viewport.maxDepth = 1.0f;
 
+        VkRect2D scissor{};
+        scissor.offset = { 0, 0 };
+        scissor.extent.width = g_rtWidth;
+        scissor.extent.height = g_rtHeight;
+
+        vkCmdSetViewport(m_myCmdB, 0, 1, &viewport);
+        vkCmdSetScissor(m_myCmdB, 0, 1, &scissor);
         vkCmdBeginRenderPass(m_myCmdB, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
         const VkDeviceSize offset = 0;
         // vkCmdBindVertexBuffers(recordingState.commandBuffer, 0, 1, &buffer.buffer, &offset);
@@ -919,6 +955,7 @@ void RenderAPI_Vulkan::DrawSimpleTriangles(const float worldMatrix[16], int tria
         vkEndCommandBuffer(m_myCmdB);
 
         VkSubmitInfo submitInfo{};
+        submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submitInfo.commandBufferCount = 1;
         submitInfo.pCommandBuffers = &m_myCmdB;
         submitInfo.signalSemaphoreCount = 0;

@@ -98,12 +98,18 @@ public class UseRenderingPlugin : MonoBehaviour
 
 		// Pass texture pointer to the plugin
 		SetTextureFromUnity (tex.GetNativeTexturePtr(), tex.width, tex.height);
-		
-		tex = new Texture2D(1024,1024,TextureFormat.RGBA32,false);
+
+		/*tex = new Texture2D(1024,1024,TextureFormat.RGBA32,false);
 		// Call Apply() so it's actually uploaded to the GPU
 		tex.Apply();
-		SetRtTextureColorAttachment(tex.GetNativeTexturePtr(), tex.width, tex.height);
 		img.texture = tex;
+		SetRtTextureColorAttachment(tex.GetNativeTexturePtr(), tex.width, tex.height);*/
+
+		RenderTextureDescriptor desc = new RenderTextureDescriptor(1024, 1024, UnityEngine.Experimental.Rendering.GraphicsFormat.R8G8B8A8_UNorm, 0);
+		var rt = RenderTexture.GetTemporary(desc);
+		rt.Create();
+		img.texture = rt;
+		SetRtTextureColorAttachment(rt.GetNativeTexturePtr(), rt.width, rt.height);
 	}
 
 	private void SendMeshBuffersToPlugin ()
