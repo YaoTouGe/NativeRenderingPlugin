@@ -564,7 +564,7 @@ void RenderAPI_Vulkan::ProcessDeviceEvent(UnityGfxDeviceEventType type, IUnityIn
                 m_TrianglePipelineLayout = VK_NULL_HANDLE;
             }
 
-            // DestroyCustomizedResources();
+            DestroyCustomizedResources();
         }
 
         m_UnityVulkan = NULL;
@@ -665,7 +665,15 @@ static uint32_t findMemoryType(VkPhysicalDevice physicalDevice, uint32_t typeFil
             return i;
         }
     }
+    assert(false && "can't find correct memory type");
+    return -1;
 }
+
+#define VK_RUN_SUCC(expression) \
+        if (expression != VK_SUCCESS)        \
+        {\
+            assert(false && #expression);\
+        }
 
 void RenderAPI_Vulkan::CreateCustomizeRenderResources()
 {
@@ -678,14 +686,14 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     cmdPoolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     cmdPoolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
     cmdPoolInfo.queueFamilyIndex = m_Instance.queueFamilyIndex;
-    vkCreateCommandPool(m_Instance.device, &cmdPoolInfo, nullptr, &m_myCmdPool);
+    VK_RUN_SUCC(vkCreateCommandPool(m_Instance.device, &cmdPoolInfo, nullptr, &m_myCmdPool));
 
     VkCommandBufferAllocateInfo cmdAllocInfo{};
     cmdAllocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
     cmdAllocInfo.commandPool = m_myCmdPool;
     cmdAllocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
     cmdAllocInfo.commandBufferCount = 1;
-    vkAllocateCommandBuffers(m_Instance.device, &cmdAllocInfo, &m_myCmdB);
+    VK_RUN_SUCC(vkAllocateCommandBuffers(m_Instance.device, &cmdAllocInfo, &m_myCmdB));
 
     // Images imageviews
     // Depth buffer
@@ -705,7 +713,7 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    vkCreateImage(m_Instance.device, &imageInfo, nullptr, &depthImage);
+    VK_RUN_SUCC(vkCreateImage(m_Instance.device, &imageInfo, nullptr, &depthImage));
 
     VkMemoryRequirements memRequirements;
     vkGetImageMemoryRequirements(m_Instance.device, depthImage, &memRequirements);
@@ -713,8 +721,8 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     allocInfos.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
     allocInfos.allocationSize = memRequirements.size;
     allocInfos.memoryTypeIndex = findMemoryType(m_Instance.physicalDevice, memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
-    vkAllocateMemory(m_Instance.device, &allocInfos, nullptr, &depthImageMemory);
-    vkBindImageMemory(m_Instance.device, depthImage, depthImageMemory, 0);
+    VK_RUN_SUCC(vkAllocateMemory(m_Instance.device, &allocInfos, nullptr, &depthImageMemory));
+    VK_RUN_SUCC(vkBindImageMemory(m_Instance.device, depthImage, depthImageMemory, 0));
 
     VkImageViewCreateInfo depthImageViewInfo{};
     depthImageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -726,7 +734,7 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     depthImageViewInfo.subresourceRange.levelCount = 1;
     depthImageViewInfo.subresourceRange.baseArrayLayer = 0;
     depthImageViewInfo.subresourceRange.layerCount = 1;
-    vkCreateImageView(m_Instance.device, &depthImageViewInfo, nullptr, &depthImageView);
+    VK_RUN_SUCC(vkCreateImageView(m_Instance.device, &depthImageViewInfo, nullptr, &depthImageView));
 
     VkImageViewCreateInfo colorImageViewInfo{};
     colorImageViewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
@@ -738,7 +746,7 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     colorImageViewInfo.subresourceRange.levelCount = 1;
     colorImageViewInfo.subresourceRange.baseArrayLayer = 0;
     colorImageViewInfo.subresourceRange.layerCount = 1;
-    vkCreateImageView(m_Instance.device, &colorImageViewInfo, nullptr, &colorImageView);
+    VK_RUN_SUCC(vkCreateImageView(m_Instance.device, &colorImageViewInfo, nullptr, &colorImageView));
 
     // ignore layout transition here
     m_images.push_back(depthImage);
@@ -777,13 +785,13 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     subpass.pDepthStencilAttachment = &depthRef;
 
     VkRenderPassCreateInfo renderPassInfo{};
-    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+    renderPassInfo.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
     renderPassInfo.attachmentCount = (uint32_t)attachments.size();
     renderPassInfo.pAttachments = attachments.data();
     renderPassInfo.subpassCount = 1;
     renderPassInfo.pSubpasses = &subpass;
 
-    vkCreateRenderPass(m_Instance.device, &renderPassInfo, nullptr, &m_myRenderPass);
+    VK_RUN_SUCC(vkCreateRenderPass(m_Instance.device, &renderPassInfo, nullptr, &m_myRenderPass));
     // Frame buffer
     VkFramebufferCreateInfo frameBufferInfo{};
     frameBufferInfo.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
@@ -793,7 +801,7 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     frameBufferInfo.width = g_rtWidth;
     frameBufferInfo.height = g_rtHeight;
     frameBufferInfo.layers = 1;
-    vkCreateFramebuffer(m_Instance.device, &frameBufferInfo, nullptr, &m_myFrameBuffer);
+    VK_RUN_SUCC(vkCreateFramebuffer(m_Instance.device, &frameBufferInfo, nullptr, &m_myFrameBuffer));
 }
 
 void RenderAPI_Vulkan::DestroyCustomizedResources()
