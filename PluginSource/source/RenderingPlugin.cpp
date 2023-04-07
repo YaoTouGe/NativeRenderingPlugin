@@ -142,10 +142,28 @@ extern "C" void UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API SetRtTextureColorAtta
 	g_rtTextureHandle = textureHandle;
 	g_rtWidth = w;
 	g_rtHeight = h;
-
-	s_CurrentAPI->SetRenderTargetColorTexture(textureHandle);
 }
 
+static void UNITY_INTERFACE_API AccessRTAttachment(int eventId)
+{
+	s_CurrentAPI->SetRenderTargetColorTexture(g_rtTextureHandle);
+}
+
+static void UNITY_INTERFACE_API InitMyFrameBufferResources(int eventId)
+{
+	s_CurrentAPI->InitMyFrameBufferResources();
+}
+
+// Must be called after SetRtTextureColorAttachment
+extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetInitMyFrameBufferResourcesFunc()
+{
+	return InitMyFrameBufferResources;
+}
+
+extern "C" UnityRenderingEvent UNITY_INTERFACE_EXPORT UNITY_INTERFACE_API GetAcessRTAttchmentFunc()
+{
+	return AccessRTAttachment;
+}
 
 static void UNITY_INTERFACE_API OnGraphicsDeviceEvent(UnityGfxDeviceEventType eventType)
 {

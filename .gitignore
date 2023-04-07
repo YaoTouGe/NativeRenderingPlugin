@@ -19,3 +19,9 @@ UnityProject/Logs
 PluginSource/build
 PluginSource/projects/Android/libs/*
 PluginSource/projects/Android/obj/*
+
+.DS_Store
+ProjectSettings
+UserSettings
+.idea
+UnityProject/obj

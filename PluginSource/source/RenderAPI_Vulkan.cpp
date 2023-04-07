@@ -466,17 +466,24 @@ public:
     virtual void EndModifyTexture(void* textureHandle, int textureWidth, int textureHeight, int rowPitch, void* dataPtr);
     virtual void* BeginModifyVertexBuffer(void* bufferHandle, size_t* outBufferSize);
     virtual void EndModifyVertexBuffer(void* bufferHandle);
-    virtual void SetRenderTargetColorTexture(void *textureHandle)
+    virtual void SetRenderTargetColorTexture(void *textureHandle) override
     {
         m_UnityVulkan->EnsureOutsideRenderPass();
 
         if (m_UnityVulkan->AccessTexture(textureHandle, UnityVulkanWholeImage, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT, kUnityVulkanResourceAccess_PipelineBarrier, &m_renderTargetColorAttachment))
         {
-            CreateCustomizeRenderResources();
         }
     }
 
+    virtual void InitMyFrameBufferResources() override
+    {
+        if (!m_myResroucesCreated)
+        {
+            CreateCustomizeRenderResources();
+            m_myResroucesCreated = true;
+        }
+    }
 private:
     typedef std::vector<VulkanBuffer> VulkanBuffers;
     typedef std::map<unsigned long long, VulkanBuffers> DeleteQueue;
@@ -509,6 +516,7 @@ private:
     std::vector<VkImageView> m_imageViews;
     std::vector<VkDeviceMemory> m_imageMemroies;
     UnityVulkanImage m_renderTargetColorAttachment;
+    bool m_myResroucesCreated = false;
 };
 
 
@@ -546,7 +554,7 @@ void RenderAPI_Vulkan::ProcessDeviceEvent(UnityGfxDeviceEventType type, IUnityIn
 
         // alternative way to intercept API
         m_UnityVulkan->InterceptVulkanAPI("vkCmdBeginRenderPass", (PFN_vkVoidFunction)Hook_vkCmdBeginRenderPass);
-        CreateCustomizeRenderResources();
+        //CreateCustomizeRenderResources();
         break;
     case kUnityGfxDeviceEventShutdown:
 
@@ -751,8 +759,8 @@ void RenderAPI_Vulkan::CreateCustomizeRenderResources()
     // ignore layout transition here
     m_images.push_back(depthImage);
     m_imageMemroies.push_back(depthImageMemory);
-    m_imageViews.push_back(depthImageView);
     m_imageViews.push_back(colorImageView);
+    m_imageViews.push_back(depthImageView);
     // Renderpass
     VkAttachmentDescription colorAttachment{};
     colorAttachment.format = m_renderTargetColorAttachment.format;

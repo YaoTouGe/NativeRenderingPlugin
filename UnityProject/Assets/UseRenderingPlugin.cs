@@ -3,6 +3,7 @@ using System;
 using System.Collections;
 using System.Runtime.InteropServices;
 using UnityEngine.Rendering;
+using UnityEngine.UI;
 
 public class UseRenderingPlugin : MonoBehaviour
 {
@@ -19,7 +20,27 @@ public class UseRenderingPlugin : MonoBehaviour
 #endif
 	private static extern void SetTimeFromUnity(float t);
 
-
+#if (UNITY_IOS || UNITY_TVOS || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
+	[DllImport ("RenderingPlugin")]
+#endif
+	private static extern void SetRtTextureColorAttachment(IntPtr texture, int w, int h);
+	
+#if (UNITY_IOS || UNITY_TVOS || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
+	[DllImport ("RenderingPlugin")]
+#endif
+	private static extern IntPtr GetInitMyFrameBufferResourcesFunc();
+	
+#if (UNITY_IOS || UNITY_TVOS || UNITY_WEBGL) && !UNITY_EDITOR
+	[DllImport ("__Internal")]
+#else
+	[DllImport ("RenderingPlugin")]
+#endif
+	private static extern IntPtr GetAcessRTAttchmentFunc();
+	
 	// We'll also pass native pointer to a texture in Unity.
 	// The plugin will fill texture data from native code.
 #if (UNITY_IOS || UNITY_TVOS || UNITY_WEBGL) && !UNITY_EDITOR
@@ -51,6 +72,8 @@ public class UseRenderingPlugin : MonoBehaviour
 	private static extern void RegisterPlugin();
 #endif
 
+	private bool mFrameBufferInitialized = false;
+	public RawImage img;
 	IEnumerator Start()
 	{
 #if UNITY_WEBGL && !UNITY_EDITOR
@@ -75,6 +98,12 @@ public class UseRenderingPlugin : MonoBehaviour
 
 		// Pass texture pointer to the plugin
 		SetTextureFromUnity (tex.GetNativeTexturePtr(), tex.width, tex.height);
+		
+		tex = new Texture2D(1024,1024,TextureFormat.RGBA32,false);
+		// Call Apply() so it's actually uploaded to the GPU
+		tex.Apply();
+		SetRtTextureColorAttachment(tex.GetNativeTexturePtr(), tex.width, tex.height);
+		img.texture = tex;
 	}
 
 	private void SendMeshBuffersToPlugin ()
@@ -128,6 +157,13 @@ public class UseRenderingPlugin : MonoBehaviour
 			// Set time for the plugin
 			SetTimeFromUnity (Time.timeSinceLevelLoad);
 
+			if (!mFrameBufferInitialized)
+			{
+				Debug.Log("Issue my own event!!!");
+				GL.IssuePluginEvent(GetAcessRTAttchmentFunc(), 1);
+				GL.IssuePluginEvent(GetInitMyFrameBufferResourcesFunc(), 1);
+				mFrameBufferInitialized = true;
+			}
 			// Issue a plugin event with arbitrary integer identifier.
 			// The plugin can distinguish between different
 			// things it needs to do based on this ID.

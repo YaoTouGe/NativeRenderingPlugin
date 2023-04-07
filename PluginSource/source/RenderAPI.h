@@ -50,6 +50,8 @@ public:
 
 	// Set color attachment of RenderTarget (vulkan test now)
 	virtual void SetRenderTargetColorTexture(void* texturehandle) {}
+
+	virtual void InitMyFrameBufferResources() {}
 };
 
 
